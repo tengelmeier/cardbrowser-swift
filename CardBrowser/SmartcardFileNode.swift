@@ -22,6 +22,7 @@ enum NodeType : String {
 
 struct SmartCardFileNode : Encodable {
     let name : String
+    var asnTag : Data?
     var tag : Any
     var nodeType: NodeType
 
@@ -54,6 +55,7 @@ struct SmartCardFileNode : Encodable {
 
             let data = tag as? Data ?? Data()
             let number = tag as? UInt8 ?? 0
+            let tagName = asnTag?.hexString() ?? name
 
             switch nodeType {
                 case .application:
@@ -62,14 +64,14 @@ struct SmartCardFileNode : Encodable {
                 try container.encode( number, forKey: .sfi)
             case .record:
                 if !data.isEmpty {
-                    try container.encode( name, forKey: .tag)
+                    try container.encode( tagName, forKey: .tag)
                     try container.encode( data.hexString(), forKey: .value)
                 } else {
                     try container.encode( number, forKey: .number)
                 }
             case .sdaRecord:
                 if !data.isEmpty {
-                    try container.encode( name, forKey: .tag)
+                    try container.encode( tagName, forKey: .tag)
                     try container.encode( data.hexString(), forKey: .value)
                 } else {
                     try container.encode( number, forKey: .number)

@@ -58,4 +58,17 @@ extension Data {
             result.append(Data.hexAlphabet[Int(value%16)])
         }))
     }
+
+    var intValue : Int? {
+          guard count <= 4 else {
+              return nil
+          }
+
+          var result : Int = 0
+          for index in 0 ..< count {
+              result <<= 8
+              result += Int( self[index] )
+          }
+          return result
+      }
 }

@@ -27,6 +27,9 @@ class EMVContentController : NSViewController {
     }
     
     @IBOutlet var treeView : NSOutlineView! = nil
+    @IBOutlet var tagView : NSTextField! = nil
+    @IBOutlet var dataView : NSTextView! = nil
+    @IBOutlet var asciiDataView : NSTextField! = nil
 
     private var rootNode = SmartCardFileNode( "root", type: .card, tag: "-" )
     private var card : CryptoTokenSmartcard? {
@@ -91,6 +94,17 @@ class EMVContentController : NSViewController {
      "A0000000651010"     // JCB
     ]
 
+    let fciNames : [Int:String] = [
+        0x84: "DF Name",
+        0x50: "Application Label",
+        0x9f12: "Application Preferred Name",
+        0x9f11: "Issuer Code Table Index",
+        0x5F2D: "Language Preference",
+        0x87: "Application Priority Indicator",
+        0x9F38: "Processing Options Data Object List",
+        0xBF0C: "FCI Issuer Discretionary Data",
+    ]
+
     @IBAction func saveDocument( _ sender: Any ) {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "CardContents.json"
@@ -112,6 +126,23 @@ class EMVContentController : NSViewController {
             }
         }
     }
+
+    var currentNode : SmartCardFileNode? {
+           didSet {
+               tagView.stringValue = ""
+               dataView.string = ""
+               asciiDataView.stringValue = ""
+               if let node = currentNode {
+                   tagView.stringValue = node.asnTag?.hexString() ?? ""
+
+                   if let data = node.tag as? Data {
+                       dataView.string = data.hexString(joinedBy: " " )
+                       asciiDataView.stringValue = String( data: data, encoding: .ascii ) ?? ""
+                   }
+               }
+
+           }
+       }
 
 }
 
@@ -166,7 +197,7 @@ extension EMVContentController {
             var pseNode = SmartCardFileNode( "Application \(pse)", type: .application, tag: pse )
 
             var fciNode = SmartCardFileNode("File Control Information", type: .fileControlInformation, tag: "fci" )
-            addRecordNodes( tlv, to: &fciNode)
+            addRecordNodes( tlv, to: &fciNode, names: fciNames )
             pseNode.children.append( fciNode )
 
             // let tlv = ASN1Parser( data )
@@ -270,7 +301,7 @@ extension EMVContentController {
             var applicationNode = SmartCardFileNode( "Application \(aidString)", type: .application, tag: aid)
             var fciNode = SmartCardFileNode("File Control Information", type:.fileControlInformation,  tag: "fci")
             if let asn = ASN1( data: data ) {
-                addRecordNodes( asn, to: &fciNode )
+                addRecordNodes( asn, to: &fciNode, names: fciNames )
             }
             applicationNode.children.append(fciNode)
 
@@ -359,6 +390,7 @@ extension EMVContentController {
                 //    }
                 //}
 
+                /*
                 apdu = APDUCommand(0x80, 0xCA, 0x9f, 0x13, Data(), 0)
                 response = card.transmit(apdu)
                 Swift.print( response.description)
@@ -368,6 +400,7 @@ extension EMVContentController {
                 apdu = APDUCommand(0x80, 0xCA, 0x9f, 0x36, Data(), 0)
                 response = card.transmit(apdu)
                 Swift.print( response.description )
+                */
             }
             return applicationNode
         }
@@ -414,13 +447,28 @@ extension EMVContentController {
         return efNode
     }
 
-    private func addRecordNodes( _ asn : ASN1, to parent: inout SmartCardFileNode )
+    private func addRecordNodes( _ asn : ASN1, to parent: inout SmartCardFileNode, names: [Int:String]? = nil )
     {
-        // FIXME: asn.value => Data vs. UInt8 
-        var node =  SmartCardFileNode( asn.tag.hexString(), type: .record, tag: asn.value )
-        asn.forEach {  addRecordNodes( $0, to: &node)  }
+        var title = asn.tag.hexString()
+
+        // FIXME: asn.value => Data vs. UInt8
+        if let tagValue = asn.tag.intValue,
+            let name = names?[tagValue] {
+            title = name
+        }
+        var node =  SmartCardFileNode( title, type: .record, tag: asn.value )
+        node.asnTag = asn.tag
+        
+        asn.forEach {  addRecordNodes( $0, to: &node, names: names )  }
 
         parent.children.append(node)
+    }
+}
+
+
+extension EMVContentController : NSOutlineViewDelegate {
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        self.currentNode = self.treeView.item(atRow: self.treeView.selectedRow) as? SmartCardFileNode
     }
 }
 
