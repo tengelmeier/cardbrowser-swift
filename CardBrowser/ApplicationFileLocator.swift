@@ -12,8 +12,8 @@ class ApplicationFileLocator {
     let data : [UInt8]
 
     init( data sourceData: Data ) {
-        var copiedData = Array<UInt8>( )
-        data = copiedData
+        precondition( sourceData.count >= 4 )
+        data = [UInt8](sourceData)
     }
 
     var SFI : UInt8 {

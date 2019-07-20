@@ -26,15 +26,15 @@ class CardReaderController: NSViewController {
                 slotStateObserver = nil
 
                 if let slot = currentSlot {
-                    slotStateObserver = slot.observe( \TKSmartCardSlot.state ) {
+                    slotStateObserver = slot.observe( \TKSmartCardSlot.state, options: [.initial] ) {
                         slot, change in
                         if slot.state == .validCard {
                             self.readCardInfo()
+                        } else {
+                            DispatchQueue.main.async {
+                                self.cardController?.representedObject = nil
+                            }
                         }
-                    }
-
-                    if slot.state == .validCard {
-                        self.readCardInfo()
                     }
                 }
             }
@@ -68,11 +68,13 @@ class CardReaderController: NSViewController {
 
             // prevent a race condition - in viewDidLoad the subcontroller is missing
             
-            slotObserver = cardManager?.observe( \TKSmartCardSlotManager.slotNames ) {
+            slotObserver = cardManager?.observe( \TKSmartCardSlotManager.slotNames, options: [.initial] ) {
                 change, newValue in
-                self.reloadSlots()
+                DispatchQueue.main.async {
+                    self.reloadSlots()
+                }
             }
-            self.reloadSlots()
+
         }
     }
 
@@ -107,11 +109,12 @@ class CardReaderController: NSViewController {
         }
 
         let title = self.currentSlot?.atr?.historicalBytes.hexString() ?? "No Card"
+        let card = currentSlot?.makeSmartCard()
         DispatchQueue.main.async {
             self.view.window?.title = title
+            self.cardController?.representedObject = card
         }
 
-        cardController?.representedObject = currentSlot?.makeSmartCard()
     }
 
 }

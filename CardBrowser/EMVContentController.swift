@@ -10,18 +10,6 @@ import Foundation
 import Cocoa
 import CryptoTokenKit
 
-struct SmartCardFileNode {
-    let name : String
-    var tag : Any
-
-    var children = [SmartCardFileNode]()
-
-    init( _ name: String, tag : Any ) {
-        self.name = name
-        self.tag = tag
-    }
-}
-
 class EMVContentController : NSViewController {
 
     override var representedObject: Any? {
@@ -40,7 +28,7 @@ class EMVContentController : NSViewController {
     
     @IBOutlet var treeView : NSOutlineView! = nil
 
-    private var rootNode = SmartCardFileNode( "root", tag: "-" )
+    private var rootNode = SmartCardFileNode( "root", type: .card, tag: "-" )
     private var card : CryptoTokenSmartcard? {
         didSet {
             rootNode.children.removeAll()
@@ -103,7 +91,42 @@ class EMVContentController : NSViewController {
      "A0000000651010"     // JCB
     ]
 
+    @IBAction func saveDocument( _ sender: Any ) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "CardContents.json"
 
+        guard let window = self.view.window else {
+            return
+        }
+
+        panel.beginSheetModal(for: window) {
+            result in
+
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+
+            if result == .OK,
+                let url = panel.url,
+                let data = try? encoder.encode( self.rootNode )  {
+                try? data.write(to: url, options: [.atomicWrite] )
+            }
+        }
+    }
+
+}
+
+extension EMVContentController : NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector( saveDocument(_:) ) {
+            return self.rootNode.children.count > 0
+        }
+        return false 
+    }
+}
+
+// Smartcard handling:
+
+extension EMVContentController {
 
     func readPaymentSystemEnvironments( identifiers: [String] ) -> (SmartCardFileNode, [String])? {
         for identifier in identifiers {
@@ -140,9 +163,9 @@ class EMVContentController : NSViewController {
         {
             var applicationIdentifiers = [String]()
 
-            var pseNode = SmartCardFileNode( "Application \(pse)", tag: pse )
+            var pseNode = SmartCardFileNode( "Application \(pse)", type: .application, tag: pse )
 
-            var fciNode = SmartCardFileNode("File Control Information", tag: "fci" )
+            var fciNode = SmartCardFileNode("File Control Information", type: .fileControlInformation, tag: "fci" )
             addRecordNodes( tlv, to: &fciNode)
             pseNode.children.append( fciNode )
 
@@ -152,7 +175,7 @@ class EMVContentController : NSViewController {
                 var recordNumber : UInt8 = 0x01
                 let p2 = ((sfi << 3) | 4)
 
-                var efDirNode = SmartCardFileNode( String( format: "EF Directory - %02x", sfi), tag: sfi)
+                var efDirNode = SmartCardFileNode( String( format: "EF Directory - %02x", sfi), type: .elementaryFile ,tag: sfi)
                 // var recordNumber = 0
                 while (response.sw1 != 0x6A && response.sw2 != 0x83)
                 {
@@ -197,7 +220,7 @@ class EMVContentController : NSViewController {
         if let data = response.data,
             let aef = ASN1( data: data )
         {
-            var recordNode = SmartCardFileNode(String(format:"Record - %02x", recordNumber), tag: recordNumber)
+            var recordNode = SmartCardFileNode(String(format:"Record - %02x", recordNumber), type: .record, tag: recordNumber)
 
             // efDirNode.children.append(recordNode)
             addRecordNodes( aef, to: &recordNode)
@@ -244,8 +267,8 @@ class EMVContentController : NSViewController {
         {
             let aidString = aid.hexString(joinedBy: "" )
 
-            var applicationNode = SmartCardFileNode( "Application \(aidString)", tag: aid)
-            var fciNode = SmartCardFileNode("File Control Information", tag: "fci")
+            var applicationNode = SmartCardFileNode( "Application \(aidString)", type: .application, tag: aid)
+            var fciNode = SmartCardFileNode("File Control Information", type:.fileControlInformation,  tag: "fci")
             if let asn = ASN1( data: data ) {
                 addRecordNodes( asn, to: &fciNode )
             }
@@ -293,7 +316,7 @@ class EMVContentController : NSViewController {
                     afl = template.find(0x94)
                 }
 
-                var aipaflNode = SmartCardFileNode("Application Interchange Profile - Application File Locator", tag: "aip")
+                var aipaflNode = SmartCardFileNode("Application Interchange Profile - Application File Locator", type: .applicationInterchangeProfile, tag: "aip")
 
                 if let aipafl = aip { // not sure from the code if template or aip should be used..
                     addRecordNodes( aipafl, to: &aipaflNode)
@@ -358,7 +381,7 @@ class EMVContentController : NSViewController {
 
         let p2 = ((file.SFI << 3) | 4)
 
-        var efNode = SmartCardFileNode( String( format: "Elementary File - %02x", file.SFI ), tag: file.SFI )
+        var efNode = SmartCardFileNode( String( format: "Elementary File - %02x", file.SFI ), type: .elementaryFile, tag: file.SFI )
         // applicationNode.children.append(efNode)
 
         guard let card = card else {
@@ -379,16 +402,8 @@ class EMVContentController : NSViewController {
 
             if let data = response.data,
                 let efAsn = ASN1( data: data ) {
-                var recordNode = SmartCardFileNode(String(format:" Record - %02x", r), tag: r)
-
-                if (r <= file.offlineRecords)
-                {
-                    // use icon 1
-                }
-                else
-                {
-                    // use icon 2
-                }
+                let type : NodeType = (r <= file.offlineRecords) ? .sdaRecord : .record
+                var recordNode = SmartCardFileNode(String(format:" Record - %02x",  r), type: type,  tag: r)
 
                 efNode.children.append(recordNode)
                 addRecordNodes( efAsn, to: &recordNode)
@@ -401,7 +416,8 @@ class EMVContentController : NSViewController {
 
     private func addRecordNodes( _ asn : ASN1, to parent: inout SmartCardFileNode )
     {
-        var node =  SmartCardFileNode( asn.tag.hexString(), tag: asn.value )
+        // FIXME: asn.value => Data vs. UInt8 
+        var node =  SmartCardFileNode( asn.tag.hexString(), type: .record, tag: asn.value )
         asn.forEach {  addRecordNodes( $0, to: &node)  }
 
         parent.children.append(node)
@@ -442,11 +458,9 @@ extension EMVContentController : NSOutlineViewDataSource {
         return object
     }
 
-
     /* NOTE: Returning nil indicates that the item's state will not be persisted.
      */
     func outlineView(_ outlineView: NSOutlineView, persistentObjectForItem item: Any?) -> Any? {
         return item
     }
-
 }
