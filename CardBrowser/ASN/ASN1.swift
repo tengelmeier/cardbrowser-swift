@@ -63,6 +63,9 @@ class ASN1
 
     init?( data : Data )
     {
+        guard data.count >= 2 else {
+            return nil
+        }
         let result = ASN1.decodeTLV( data, start: 0 )
         tag = result.0
         value = result.2

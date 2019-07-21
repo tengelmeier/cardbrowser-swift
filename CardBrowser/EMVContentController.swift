@@ -12,6 +12,10 @@ import CryptoTokenKit
 
 class EMVContentController : NSViewController {
 
+    enum TokenError : Error {
+        case recordNotFound
+        case fileNotFound
+    }
     override var representedObject: Any? {
         didSet {
             var newCard : CryptoTokenSmartcard? = nil
@@ -96,6 +100,8 @@ class EMVContentController : NSViewController {
 
     let fciNames : [Int:String] = [
         0x84: "DF Name",
+        0xA5: "EMV.FCI Issuer",
+        0x88: "EMV SFI",
         0x50: "Application Label",
         0x9f12: "Application Preferred Name",
         0x9f11: "Issuer Code Table Index",
@@ -170,14 +176,13 @@ extension EMVContentController {
         return nil
     }
 
-    // Fails for my MC
     func readPaymentSystemEnvironment( _ identifier: String ) -> (SmartCardFileNode, [String])? {
         guard let pse = identifier.data(using: .ascii ),
           let card = card else {
             return nil
         }
 
-        var apdu = APDUCommand( 0x00, 0xA4, 0x04, 0x00, pse, UInt8( pse.count ) )
+        var apdu = APDUCommand( 0x00, 0xA4, 0x04, 0x00, pse, 0 ) // Select APP
         var response = card.transmit(apdu)
 
         // Get response nescesary
@@ -194,7 +199,7 @@ extension EMVContentController {
         {
             var applicationIdentifiers = [String]()
 
-            var pseNode = SmartCardFileNode( "Application \(pse)", type: .application, tag: pse )
+            var pseNode = SmartCardFileNode( "Application \(identifier)", type: .application, tag: pse )
 
             var fciNode = SmartCardFileNode("File Control Information", type: .fileControlInformation, tag: "fci" )
             addRecordNodes( tlv, to: &fciNode, names: fciNames )
@@ -204,21 +209,22 @@ extension EMVContentController {
             if let sfi : UInt8 = tlv.find( 0x88 )?.value[0] {
 
                 var recordNumber : UInt8 = 0x01
-                let p2 = ((sfi << 3) | 4)
 
-                var efDirNode = SmartCardFileNode( String( format: "EF Directory - %02x", sfi), type: .elementaryFile ,tag: sfi)
-                // var recordNumber = 0
-                while (response.sw1 != 0x6A && response.sw2 != 0x83)
-                {
-                    if let parsedRecord = readRecord(recordNumber: recordNumber, length: p2 ) {
-                        efDirNode.children.append( parsedRecord.0 )
-                        let identifierStrings = parsedRecord.1.map{ $0.hexString() }
-                        applicationIdentifiers.append( contentsOf: identifierStrings )
+                var efDirNode = SmartCardFileNode( "Elementary File - sfi \(sfi)", type: .elementaryFile ,tag: sfi)
+
+                do {
+                    while recordNumber < 255
+                    {
+                        if let parsedRecord = try readRecord(recordNumber: recordNumber, sfi: sfi ) {
+                            efDirNode.children.append( parsedRecord.0 )
+                            let identifierStrings = parsedRecord.1.map{ $0.hexString() }
+                            applicationIdentifiers.append( contentsOf: identifierStrings )
+                        }
+                        recordNumber += 1
                     }
+                } catch let error {
 
-                    recordNumber += 1
                 }
-
                 pseNode.children.append(efDirNode)
                 return (pseNode, applicationIdentifiers)
             }
@@ -226,19 +232,23 @@ extension EMVContentController {
         return nil
     }
 
-    func readRecord( recordNumber: UInt8, length: UInt8 ) -> (SmartCardFileNode, [Data])? {
-        var applicationIdentifiers = [Data]()
-        var apdu = APDUCommand(0x00, 0xB2, recordNumber, length, Data(), 0x00)
-
+    func readRecord( recordNumber: UInt8, sfi: UInt8 ) throws -> (SmartCardFileNode, [Data])? {
         guard let card = card else {
             return nil
         }
+
+        // sfi = short (elementary) file identifier
+        // 0 and all bits set are reserved for other uses
+
+        var applicationIdentifiers = [Data]()
+        let p2 = ((sfi << 3) | 4) // sfi in high bits, 0x04 indicates to interpret p1 as record number
+        var apdu = APDUCommand(0x00, 0xB2, recordNumber, p2, nil, 0x0)
 
         var response = card.transmit(apdu)
         // Retry with correct length
         if response.sw1 == 0x6C
         {
-            apdu = APDUCommand(0x00, 0xB2, recordNumber, length, Data(), response.sw2)
+            apdu = APDUCommand(0x00, 0xB2, recordNumber, p2, Data(), response.sw2)
             response = card.transmit(apdu)
         }
 
@@ -248,10 +258,18 @@ extension EMVContentController {
             response = card.transmit(apdu)
         }
 
+        if response.sw1 == 0x6a {
+            if response.sw2 == 0x83  {
+                throw TokenError.recordNotFound
+            } else if response.sw2 == 0x82 {
+                throw TokenError.fileNotFound
+            }
+        }
+
         if let data = response.data,
             let aef = ASN1( data: data )
         {
-            var recordNode = SmartCardFileNode(String(format:"Record - %02x", recordNumber), type: .record, tag: recordNumber)
+            var recordNode = SmartCardFileNode(String(format:"Record %2x", recordNumber), type: .record, tag: recordNumber)
 
             // efDirNode.children.append(recordNode)
             addRecordNodes( aef, to: &recordNode)
@@ -268,6 +286,28 @@ extension EMVContentController {
             return (recordNode, applicationIdentifiers)
         }
         return nil
+    }
+
+    func tryReadAllRecords( ) -> [SmartCardFileNode] {
+        var nodes = [SmartCardFileNode]()
+
+        for sfi in 1 ..< 14 {
+            var sfiNode = SmartCardFileNode( "Elementary File - SFI:\(sfi)", type:.elementaryFile, tag:sfi )
+
+            do {
+                for i in 1 ..< 30 {
+                    if let node = try readRecord(recordNumber: UInt8( i ), sfi: UInt8( sfi ) ) {
+                        sfiNode.children.append( node.0 )
+                    }
+                }
+            } catch let error {
+                
+            }
+            if !sfiNode.children.isEmpty {
+                nodes.append( sfiNode )
+            }
+        }
+        return nodes
     }
 
     func readData( ofApplication aid: Data ) -> SmartCardFileNode? {
@@ -305,25 +345,34 @@ extension EMVContentController {
             }
             applicationNode.children.append(fciNode)
 
+            // --------------
+
             // Get processing options (with empty PDOL)
             let commandBytes : [UInt8] = [0x83, 0x00]
             let commandData = Data( commandBytes )
-            apdu = APDUCommand(0x80, 0xA8, 0x00, 0x00, commandData, nil )
+            apdu = APDUCommand(0x80, 0xA8, 0x00, 0x00, commandData, 0 )
             response = card.transmit(apdu)
 
-            // Get response nescesary
+            // Keep receiving sw1 = 0x67 (wrong length) which should only happen when sizeof( commandBytes != 2 ) ???
+
+
+            // if response.sw1 == 0x67 {
+            //    let alternateCommandData : [UInt8] = [0x83, 0x0B, 00,00, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+            //    apdu = APDUCommand(0x80, 0xA8, 0x00, 0x00, Data( alternateCommandData ), 0)
+            //     response = card.transmit(apdu)
+            // }
+
+            // Get response necessary
             if (response.sw1 == 0x61)
             {
                 apdu = APDUCommand(0x00, 0xC0, 0x00, 0x00, Data(), response.sw2)
                 response = card.transmit(apdu)
             }
 
-            // Not tested - MC applets return 0x6D:
             if response.sw1 == 0x90,
                 let data = response.data,
                 let template = ASN1( data: data)
             {
-
                 var aip : ASN1?
                 var afl : ASN1?
 
@@ -347,11 +396,11 @@ extension EMVContentController {
                     afl = template.find(0x94)
                 }
 
-                var aipaflNode = SmartCardFileNode("Application Interchange Profile - Application File Locator", type: .applicationInterchangeProfile, tag: "aip")
+                var aipaflNode = SmartCardFileNode("Application Interchange Profile - Application File Locator", type: .applicationInterchangeProfile, tag: data)
 
-                if let aipafl = aip { // not sure from the code if template or aip should be used..
-                    addRecordNodes( aipafl, to: &aipaflNode)
-                }
+                // if let aipafl = template { // not sure from the code if template or aip should be used..
+                addRecordNodes( template, to: &aipaflNode)
+                // }
                 applicationNode.children.append(aipaflNode)
 
                 // Chop up AFL's
@@ -401,6 +450,9 @@ extension EMVContentController {
                 response = card.transmit(apdu)
                 Swift.print( response.description )
                 */
+            } else {
+                // Brute force read all SFIs
+                 applicationNode.children.append( contentsOf: tryReadAllRecords( ) )
             }
             return applicationNode
         }
@@ -412,9 +464,7 @@ extension EMVContentController {
         var r : UInt8 = file.firstRecord// +afl.OfflineRecords;     // We'll read SDA records too
         let lr : UInt8  = file.lastRecord
 
-        let p2 = ((file.SFI << 3) | 4)
-
-        var efNode = SmartCardFileNode( String( format: "Elementary File - %02x", file.SFI ), type: .elementaryFile, tag: file.SFI )
+        var efNode = SmartCardFileNode( "Elementary File - sfi \(file.SFI)", type: .elementaryFile, tag: file.SFI )
         // applicationNode.children.append(efNode)
 
         guard let card = card else {
@@ -423,25 +473,16 @@ extension EMVContentController {
 
         while (r <= lr)
         {
-            var apdu = APDUCommand(0x00, 0xB2, r, p2, Data(), 0x00)
-            var response = card.transmit(apdu)
+            do {
+                if var recordTuple = try readRecord( recordNumber: UInt8( r ), sfi: file.SFI ) {
+                    if r <= file.offlineRecords {
+                        recordTuple.0.nodeType = .sdaRecord
+                    }
+                    efNode.children.append( recordTuple.0 )
+                }
+            } catch let error {
 
-            // Retry with correct length
-            if response.sw1 == 0x6C
-            {
-                apdu = APDUCommand(0x00, 0xB2, r, p2, Data(), response.sw2)
-                response = card.transmit(apdu)
             }
-
-            if let data = response.data,
-                let efAsn = ASN1( data: data ) {
-                let type : NodeType = (r <= file.offlineRecords) ? .sdaRecord : .record
-                var recordNode = SmartCardFileNode(String(format:" Record - %02x",  r), type: type,  tag: r)
-
-                efNode.children.append(recordNode)
-                addRecordNodes( efAsn, to: &recordNode)
-            }
-
             r += 1
         }
         return efNode

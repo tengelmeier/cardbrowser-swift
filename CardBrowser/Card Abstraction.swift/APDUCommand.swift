@@ -16,7 +16,7 @@ class APDUCommand {
           instructionCode: UInt8, // Instruction code - indicates the specific command, e.g. "write data"
           p1Parameter: UInt8, // Instruction parameters for the command, e.g. offset into file at which to write the data
           p2Parameter: UInt8,
-          data: Data,
+          data: Data?,
           expectedResponseLength: Int? ) {
         self.instructionClass = instructionClass
         self.instructionCode = instructionCode
@@ -30,7 +30,7 @@ class APDUCommand {
           _ instructionCode: UInt8,
           _ p1Parameter: UInt8,
           _ p2Parameter: UInt8,
-          _ data: Data,
+          _ data: Data?,
           _ expectedResponseLength: UInt8? ) {
         self.instructionClass = instructionClass
         self.instructionCode = instructionCode
@@ -42,15 +42,15 @@ class APDUCommand {
 
     var description : String {
         get {
-            let dataBytes = data.hexString(joinedBy: " " )
-            return String( format:"%02X %02X %02X (%02X) %@", instructionCode, p1, p2, data.count, dataBytes ) }
+            let dataBytes = data?.hexString(joinedBy: " " ) ?? ""
+            return String( format:"%02X %02X %02X (%02X) %@", instructionCode, p1, p2, data?.count ?? 0, dataBytes ) }
     }
     
     let instructionClass: UInt8
     let instructionCode: UInt8
     let p1: UInt8
     let p2: UInt8
-    let data: Data
+    let data: Data?
     let expectedResponseLength: Int?
 }
 

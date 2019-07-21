@@ -3,11 +3,9 @@
 Rudimentary macOS port of emvcardbrowser by Nic Bedford 
 Implemented in Swift 5 for macOS 10.14
 
-Not implemented: 
-    - find a card to test files
-    - test paymentSystemIdentifier parsing
-    - implement saving
-    - implement viewing TLV data
+Debug help:
+
+        sudo defaults write /Library/Preferences/com.apple.security.smartcard Logging -bool yes
 
 References:
 
