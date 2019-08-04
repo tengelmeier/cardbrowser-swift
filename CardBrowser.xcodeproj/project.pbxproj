@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9331312022E7907D00A1C735 /* EMVTagNames.json in Resources */ = {isa = PBXBuildFile; fileRef = 9331311F22E7907D00A1C735 /* EMVTagNames.json */; };
 		9344316422E24F8A004F9560 /* SmartcardFileNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9344316322E24F8A004F9560 /* SmartcardFileNode.swift */; };
 		936E79C422D9297500ABCEB0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936E79C322D9297500ABCEB0 /* AppDelegate.swift */; };
 		936E79C622D9297500ABCEB0 /* CardReaderController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936E79C522D9297500ABCEB0 /* CardReaderController.swift */; };
@@ -23,6 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		9331311F22E7907D00A1C735 /* EMVTagNames.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = EMVTagNames.json; sourceTree = "<group>"; };
 		9344316322E24F8A004F9560 /* SmartcardFileNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartcardFileNode.swift; sourceTree = "<group>"; };
 		936E79C022D9297500ABCEB0 /* CardBrowser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CardBrowser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		936E79C322D9297500ABCEB0 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -81,6 +83,7 @@
 				9344316322E24F8A004F9560 /* SmartcardFileNode.swift */,
 				936E79D522D9DEC400ABCEB0 /* ApplicationFileLocator.swift */,
 				936E79E222DB6C7D00ABCEB0 /* Data+hexString.swift */,
+				9331311F22E7907D00A1C735 /* EMVTagNames.json */,
 				936E79EB22DC9F5B00ABCEB0 /* Card Abstraction */,
 				936E79E122DB56B700ABCEB0 /* ASN */,
 				936E79EC22DCA02600ABCEB0 /* README.md */,
@@ -188,6 +191,7 @@
 			files = (
 				936E79C822D9297700ABCEB0 /* Assets.xcassets in Resources */,
 				936E79CB22D9297700ABCEB0 /* Main.storyboard in Resources */,
+				9331312022E7907D00A1C735 /* EMVTagNames.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -10,6 +10,18 @@ import Foundation
 import Cocoa
 import CryptoTokenKit
 
+struct TagDescriptionElement: Codable {
+    let tag, name: String
+    let tagDescription: String?
+
+    enum CodingKeys: String, CodingKey {
+        case tag, name
+        case tagDescription = "description"
+    }
+}
+
+typealias TagDescription = [TagDescriptionElement]
+
 class EMVContentController : NSViewController {
 
     enum TokenError : Error {
@@ -98,18 +110,22 @@ class EMVContentController : NSViewController {
      "A0000000651010"     // JCB
     ]
 
-    let fciNames : [Int:String] = [
-        0x84: "DF Name",
-        0xA5: "EMV.FCI Issuer",
-        0x88: "EMV SFI",
-        0x50: "Application Label",
-        0x9f12: "Application Preferred Name",
-        0x9f11: "Issuer Code Table Index",
-        0x5F2D: "Language Preference",
-        0x87: "Application Priority Indicator",
-        0x9F38: "Processing Options Data Object List",
-        0xBF0C: "FCI Issuer Discretionary Data",
-    ]
+    var tagNames = [Int:TagDescriptionElement]()
+
+    override func viewDidLoad() {
+
+        if let dataUrl = Bundle.main.url(forResource: "EMVTagNames", withExtension: "json" ),
+            let descriptionData = try? Data( contentsOf: dataUrl ),
+            let descriptions = try? JSONDecoder().decode(TagDescription.self, from: descriptionData ) {
+            // tagNames = descriptions
+
+            descriptions.forEach( ) {
+                if let tagID = Int( $0.tag, radix: 16 ) {
+                    tagNames[tagID] = $0
+                }
+            }
+        }
+    }
 
     @IBAction func saveDocument( _ sender: Any ) {
         let panel = NSSavePanel()
@@ -146,10 +162,8 @@ class EMVContentController : NSViewController {
                        asciiDataView.stringValue = String( data: data, encoding: .ascii ) ?? ""
                    }
                }
-
            }
        }
-
 }
 
 extension EMVContentController : NSMenuItemValidation {
@@ -202,7 +216,7 @@ extension EMVContentController {
             var pseNode = SmartCardFileNode( "Application \(identifier)", type: .application, tag: pse )
 
             var fciNode = SmartCardFileNode("File Control Information", type: .fileControlInformation, tag: "fci" )
-            addRecordNodes( tlv, to: &fciNode, names: fciNames )
+            addRecordNodes( tlv, to: &fciNode )
             pseNode.children.append( fciNode )
 
             // let tlv = ASN1Parser( data )
@@ -341,7 +355,7 @@ extension EMVContentController {
             var applicationNode = SmartCardFileNode( "Application \(aidString)", type: .application, tag: aid)
             var fciNode = SmartCardFileNode("File Control Information", type:.fileControlInformation,  tag: "fci")
             if let asn = ASN1( data: data ) {
-                addRecordNodes( asn, to: &fciNode, names: fciNames )
+                addRecordNodes( asn, to: &fciNode )
             }
             applicationNode.children.append(fciNode)
 
@@ -488,19 +502,19 @@ extension EMVContentController {
         return efNode
     }
 
-    private func addRecordNodes( _ asn : ASN1, to parent: inout SmartCardFileNode, names: [Int:String]? = nil )
+    private func addRecordNodes( _ asn : ASN1, to parent: inout SmartCardFileNode )
     {
         var title = asn.tag.hexString()
 
         // FIXME: asn.value => Data vs. UInt8
         if let tagValue = asn.tag.intValue,
-            let name = names?[tagValue] {
-            title = name
+            let tagDesc = tagNames[tagValue] {
+            title = tagDesc.name
         }
         var node =  SmartCardFileNode( title, type: .record, tag: asn.value )
         node.asnTag = asn.tag
         
-        asn.forEach {  addRecordNodes( $0, to: &node, names: names )  }
+        asn.forEach {  addRecordNodes( $0, to: &node )  }
 
         parent.children.append(node)
     }
