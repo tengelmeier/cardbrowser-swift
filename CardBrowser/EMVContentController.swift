@@ -46,6 +46,7 @@ class EMVContentController : NSViewController {
     @IBOutlet var tagView : NSTextField! = nil
     @IBOutlet var dataView : NSTextView! = nil
     @IBOutlet var asciiDataView : NSTextField! = nil
+    @IBOutlet var descriptionLabel : NSTextField! = nil
 
     private var rootNode = SmartCardFileNode( "root", type: .card, tag: "-" )
     private var card : CryptoTokenSmartcard? {
@@ -54,9 +55,13 @@ class EMVContentController : NSViewController {
             DispatchQueue.main.async {
                 self.treeView.reloadData()
             }
+            if card === oldValue {
+                return
+            }
 
             card?.beginSession{
                 success, error in
+                // print( "*** Loading Card Content \(self.card!)" )
                 self.cardQueue.async {
                     var identifiers = self.knownApplicationIdentifiers
                     if let pse = self.readPaymentSystemEnvironments( identifiers: self.defaultPaymentSystemIdentifiers ) {
@@ -154,9 +159,11 @@ class EMVContentController : NSViewController {
                tagView.stringValue = ""
                dataView.string = ""
                asciiDataView.stringValue = ""
+               descriptionLabel.stringValue = ""
+
                if let node = currentNode {
                    tagView.stringValue = node.asnTag?.hexString() ?? ""
-
+                   descriptionLabel.stringValue = currentNode?.comment ?? ""
                    if let data = node.tag as? Data {
                        dataView.string = data.hexString(joinedBy: " " )
                        asciiDataView.stringValue = String( data: data, encoding: .ascii ) ?? ""
@@ -505,13 +512,16 @@ extension EMVContentController {
     private func addRecordNodes( _ asn : ASN1, to parent: inout SmartCardFileNode )
     {
         var title = asn.tag.hexString()
+        var comment = ""
 
         // FIXME: asn.value => Data vs. UInt8
         if let tagValue = asn.tag.intValue,
             let tagDesc = tagNames[tagValue] {
             title = tagDesc.name
+            comment = tagDesc.tagDescription ?? ""
+
         }
-        var node =  SmartCardFileNode( title, type: .record, tag: asn.value )
+        var node =  SmartCardFileNode( title, type: .record, tag: asn.value, commment: comment )
         node.asnTag = asn.tag
         
         asn.forEach {  addRecordNodes( $0, to: &node )  }

@@ -25,13 +25,15 @@ struct SmartCardFileNode : Encodable {
     var asnTag : Data?
     var tag : Any
     var nodeType: NodeType
+    var comment: String? = nil
 
     var children = [SmartCardFileNode]()
 
-    init( _ name: String, type: NodeType, tag : Any ) {
+    init( _ name: String, type: NodeType, tag : Any, commment: String? = nil ) {
         self.name = name
         self.tag = tag
         self.nodeType = type
+        self.comment = commment
     }
 
     enum CodingKeys: CodingKey {
