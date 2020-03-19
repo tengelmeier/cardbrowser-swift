@@ -121,23 +121,30 @@ class ASN1
         let tag = data.subdata(in: pos ..< pos + tagLength )
         pos += tagLength
 
-        var length = Int( data[pos] )
-        pos += 1
+        var content : Data
+        var length = Int( 0 )
+        if( pos < data.count ) {
 
-        // Special case where L contains the Length of the Length + 0x80
-        if ((length & 0x80) == 0x80)
-        {
-            let lengthLen = length & 0x7F
-            length = 0
+            length = Int( data[pos] )
+            pos += 1
 
-            precondition( lengthLen > 0 , "expecting a length" )
-            for _ in 0 ..< lengthLen {
-                length = length * 256 + Int( data[pos] )
-                pos += 1
+            // Special case where L contains the Length of the Length + 0x80
+            if ((length & 0x80) == 0x80)
+            {
+                let lengthLen = length & 0x7F
+                length = 0
+
+                precondition( lengthLen > 0 , "expecting a length" )
+                for _ in 0 ..< lengthLen {
+                    length = length * 256 + Int( data[pos] )
+                    pos += 1
+                }
             }
-        }
 
-        let content = data.subdata(in: pos ..< pos + length )
+            content = data.subdata(in: pos ..< pos + length )
+        } else {
+            content = Data()
+        }
         return (tag, length, content, pos)
     }
 
