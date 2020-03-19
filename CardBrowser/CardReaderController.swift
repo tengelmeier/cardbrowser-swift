@@ -18,22 +18,38 @@ class CardReaderController: NSViewController {
     var cardController : NSViewController?
     var slotObserver : NSKeyValueObservation? = nil
     var slotStateObserver : NSKeyValueObservation? = nil
+    // var lastSlotState : TKSmartCardSlot.State = .missing
+
+    var currentCard : TKSmartCard? = nil {
+        didSet {
+            DispatchQueue.main.async {
+                self.cardController?.representedObject = self.currentCard
+            }
+        }
+    }
 
     var currentSlot : TKSmartCardSlot? = nil {
         didSet {
             if currentSlot != oldValue {
                 slotStateObserver?.invalidate()
                 slotStateObserver = nil
+                currentCard = nil
+
+                // The observer and usage of currentCard makes sure the card is only read once:
+                // The state cycles valid ->(make card) -> probing -> valid
 
                 if let slot = currentSlot {
                     slotStateObserver = slot.observe( \TKSmartCardSlot.state, options: [.initial] ) {
                         slot, change in
-                        if slot.state == .validCard {
-                            self.readCardInfo()
-                        } else {
-                            DispatchQueue.main.async {
-                                self.cardController?.representedObject = nil
+                        let state = slot.state
+                        switch( state ) {
+                            case .probing, .validCard:
+                            if self.currentCard == nil {
+                                self.readCardInfo()
                             }
+                        default:
+                            self.currentCard = nil
+
                         }
                     }
                 }
@@ -58,7 +74,8 @@ class CardReaderController: NSViewController {
     @IBAction func selectSlot( _ sender: Any ) {
         if let readerName = readerPopup.titleOfSelectedItem,
             let cm = cardManager {
-            currentSlot = cm.slotNamed(readerName)
+            let slot = cm.slotNamed(readerName)
+            currentSlot = slot
         }
     }
 
@@ -96,23 +113,22 @@ class CardReaderController: NSViewController {
             if currentSlot == nil,
                 !cm.slotNames.isEmpty {
                 readerPopup.selectItem(at: 0)
-                self.selectSlot( readerPopup! )
+                self.selectSlot( self )
             }
         }
     }
 
     private func readCardInfo() {
-        Swift.print( "\(#function)" )
+        var title = "No Card"
         if let atr = currentSlot?.atr {
-
             Swift.print( "\(atr.historicalBytes.debugDescription) protocols:\(atr.protocols)" )
+            currentCard = currentSlot?.makeSmartCard()
+            title = atr.historicalBytes.hexString() 
         }
 
-        let title = self.currentSlot?.atr?.historicalBytes.hexString() ?? "No Card"
-        let card = currentSlot?.makeSmartCard()
+
         DispatchQueue.main.async {
             self.view.window?.title = title
-            self.cardController?.representedObject = card
         }
 
     }
